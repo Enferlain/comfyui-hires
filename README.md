@@ -4,38 +4,38 @@ Workspace for a new high-quality, high-performance hires-fix / upscale custom no
 
 Current status:
 - local research notes captured from ComfyUI core and local ReForge source
-- first runnable node implemented: `GigaHires V1`
+- helper nodes implemented for the workflow-first direction:
+  - `GigaHires Latent Upscale`
+  - `GigaHires Image Upscale`
+  - `GigaHires Refine Pass`
+- coordinator nodes still available:
+  - `GigaHires V1`
+  - `GigaHires Easy`
 
-Implemented in v1:
-- post-sampler hires-fix coordinator
-- accepts a first-pass latent
-- latent branch with ReForge-style interpolation modes
-- learned upscaler branch with optional `UPSCALE_MODEL` input or internal selector
-- second-pass refinement using Comfy's sampling helper
-- optional pass-2 conditioning overrides
-- regular or tiled VAE mode for pixel-path work
-- debug outputs for pre-refine and post-refine comparison
+Recommended direction:
+- use the helper-node workflow
+- keep normal pass, upscale, and refine visibly separate
+- later collapse that layout into a subgraph with only the important face controls exposed
 
-Node outputs:
-- `pass2_latent`
-- `pass2_image`
-- `refined_latent`
-- `refined_image`
-- `debug_info`
+Helper nodes:
+- `GigaHires Latent Upscale`
+  - latent-space upscale with `scale_by` or exact target size
+- `GigaHires Image Upscale`
+  - image-space upscale with `scale_by` or exact target size
+  - accepts an `UPSCALE_MODEL` input or internal model dropdown
+- `GigaHires Refine Pass`
+  - explicit second-pass sampler stage on the already-upscaled latent
 
-Suggested first test:
-- generate a base latent with your usual `KSampler` or `SamplerCustom`
-- feed the main latent output into `GigaHires V1`
-- start with:
-  - `branch_mode = latent`
-  - `latent_mode = Latent (antialiased)`
-  - `sizing_mode = scale`
-  - `scale_by = 2.0`
-  - `steps = 12`
-  - `denoise = 0.35`
-- compare `pass2_image` vs `refined_image`
-- then try `branch_mode = upscale_model` with a loaded upscale model
+Coordinator nodes:
+- `GigaHires V1`
+  - single post-sampler hires coordinator with most knobs exposed
+- `GigaHires Easy`
+  - simplified wrapper kept around for quick experiments, not the main UX direction
 
 Primary notes:
 - [docs/reforge-hires-fix-notes.md](docs/reforge-hires-fix-notes.md)
+- [docs/explicit-two-pass-reference.md](docs/explicit-two-pass-reference.md)
+- [docs/helper-nodes-subgraph-plan.md](docs/helper-nodes-subgraph-plan.md)
+- [example_workflows/explicit_two_pass_reference.json](/mnt/d/comfyui/custom_nodes/ComfyUI-GigaHires/example_workflows/explicit_two_pass_reference.json)
+- [example_workflows/helper_nodes_reference.json](/mnt/d/comfyui/custom_nodes/ComfyUI-GigaHires/example_workflows/helper_nodes_reference.json)
 - [reforge repo](/mnt/d/stable-diffusion-webui-reForge)
