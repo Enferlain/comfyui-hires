@@ -183,11 +183,11 @@ def _upscale_latent_tensor(samples: torch.Tensor, width: int, height: int, laten
 
 def _load_upscale_model(upscale_model, upscale_model_name: str):
     if upscale_model is not None:
-        return upscale_model, getattr(upscale_model, "model_name", None) or "<input>"
+        return upscale_model, getattr(upscale_model, "model_name", None) or "<input>", False
     if upscale_model_name == "None":
         raise ValueError("branch_mode 'upscale_model' requires either an 'upscale_model' input or a selected 'upscale_model_name'.")
     loaded = UpscaleModelLoader.execute(upscale_model_name)[0]
-    return loaded, upscale_model_name
+    return loaded, upscale_model_name, True
 
 
 def _run_image_upscale(
@@ -200,6 +200,7 @@ def _run_image_upscale(
     upscale_model_name: str = "None",
     upscale_model=None,
 ):
+    start_time = time.perf_counter()
     base_width = image.shape[2]
     base_height = image.shape[1]
     resolved_width, resolved_height = _resolve_target_size_from_dims(
@@ -212,22 +213,37 @@ def _run_image_upscale(
     )
 
     used_upscale_model_name = None
+    loaded_internally = False
+    upscale_model_elapsed_ms = 0.0
+    resize_elapsed_ms = 0.0
     if method == "upscale_model":
         if resolved_width > base_width or resolved_height > base_height:
-            loaded_upscale_model, used_upscale_model_name = _load_upscale_model(upscale_model, upscale_model_name)
+            loaded_upscale_model, used_upscale_model_name, loaded_internally = _load_upscale_model(upscale_model, upscale_model_name)
+            upscale_model_start = time.perf_counter()
             upscaled = ImageUpscaleWithModel.execute(loaded_upscale_model, image)[0]
+            upscale_model_elapsed_ms = round((time.perf_counter() - upscale_model_start) * 1000.0, 2)
         else:
             upscaled = image
             used_upscale_model_name = "<skipped-downscale>"
+        resize_start = time.perf_counter()
         final_image = _resize_image_tensor(upscaled, resolved_width, resolved_height, "lanczos")
+        resize_elapsed_ms = round((time.perf_counter() - resize_start) * 1000.0, 2)
     else:
+        resize_start = time.perf_counter()
         final_image = _resize_image_tensor(image, resolved_width, resolved_height, "lanczos")
+        resize_elapsed_ms = round((time.perf_counter() - resize_start) * 1000.0, 2)
 
     return final_image, {
         "method": method,
         "used_upscale_model_name": used_upscale_model_name,
+        "upscale_model_loaded_internally": loaded_internally,
         "base_size": [base_width, base_height],
         "resolved_size": [resolved_width, resolved_height],
+        "timings_ms": {
+            "upscale_model": upscale_model_elapsed_ms,
+            "resize": resize_elapsed_ms,
+            "total": round((time.perf_counter() - start_time) * 1000.0, 2),
+        },
     }
 
 
@@ -277,6 +293,7 @@ def _run_giga_hires(
 
     branch_start = time.perf_counter()
     used_upscale_model_name = None
+    loaded_internally = False
 
     if branch_mode == "latent":
         pass2_latent = _copy_latent_with_samples(
@@ -289,7 +306,7 @@ def _run_giga_hires(
         decoded = _resize_image_tensor(decoded, base_width, base_height, "lanczos")
 
         if resolved_width > base_width or resolved_height > base_height:
-            loaded_upscale_model, used_upscale_model_name = _load_upscale_model(upscale_model, upscale_model_name)
+            loaded_upscale_model, used_upscale_model_name, loaded_internally = _load_upscale_model(upscale_model, upscale_model_name)
             upscaled = ImageUpscaleWithModel.execute(loaded_upscale_model, decoded)[0]
         else:
             upscaled = decoded
@@ -326,6 +343,7 @@ def _run_giga_hires(
         "branch_mode": branch_mode,
         "latent_mode": latent_mode if branch_mode == "latent" else None,
         "used_upscale_model_name": used_upscale_model_name,
+        "upscale_model_loaded_internally": loaded_internally,
         "sizing_mode": sizing_mode,
         "base_size": [base_width, base_height],
         "resolved_size": [resolved_width, resolved_height],
@@ -391,6 +409,7 @@ class GigaHiresLatentUpscale(io.ComfyNode):
 
     @classmethod
     def execute(cls, latent, vae, latent_mode, sizing_mode, scale_by, target_width, target_height) -> io.NodeOutput:
+        start_time = time.perf_counter()
         base_width, base_height, resolved_width, resolved_height, compression = _resolve_target_size(
             latent,
             vae,
@@ -416,6 +435,9 @@ class GigaHiresLatentUpscale(io.ComfyNode):
                 "base_size": [base_width, base_height],
                 "resolved_size": [resolved_width, resolved_height],
                 "latent_shape": list(upscaled["samples"].shape),
+                "timings_ms": {
+                    "total": round((time.perf_counter() - start_time) * 1000.0, 2),
+                },
             },
             indent=2,
         )
@@ -522,6 +544,7 @@ class GigaHiresRefinePass(io.ComfyNode):
         vae_overlap,
     ) -> io.NodeOutput:
         start_time = time.perf_counter()
+        sample_start = time.perf_counter()
         refined_latent = nodes.common_ksampler(
             model,
             seed,
@@ -534,7 +557,10 @@ class GigaHiresRefinePass(io.ComfyNode):
             latent,
             denoise=denoise,
         )[0]
+        sample_elapsed_ms = round((time.perf_counter() - sample_start) * 1000.0, 2)
+        decode_start = time.perf_counter()
         refined_image = _decode_latent(vae, refined_latent, vae_mode, vae_tile_size, vae_overlap)
+        decode_elapsed_ms = round((time.perf_counter() - decode_start) * 1000.0, 2)
         debug_info = json.dumps(
             {
                 "node": "GigaHiresRefinePass",
@@ -546,12 +572,38 @@ class GigaHiresRefinePass(io.ComfyNode):
                 "vae_mode": vae_mode,
                 "latent_shape": list(refined_latent["samples"].shape),
                 "timings_ms": {
+                    "sample": sample_elapsed_ms,
+                    "decode": decode_elapsed_ms,
                     "total": round((time.perf_counter() - start_time) * 1000.0, 2),
                 },
             },
             indent=2,
         )
         return io.NodeOutput(refined_latent, refined_image, debug_info)
+
+
+class GigaHiresDebugPrint(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="GigaHiresDebugPrint",
+            display_name="GigaHires Debug Print",
+            category="utils",
+            description="Prints a STRING value to the ComfyUI console and passes it through unchanged.",
+            inputs=[
+                io.String.Input("text", multiline=True),
+                io.String.Input("label", default="GigaHires Debug"),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, text, label) -> io.NodeOutput:
+        print(f"[{label}]")
+        print(text)
+        return io.NodeOutput(text)
 
 
 class GigaHiresEasy(io.ComfyNode):
@@ -741,6 +793,7 @@ class GigaHiresExtension(ComfyExtension):
             GigaHiresLatentUpscale,
             GigaHiresImageUpscale,
             GigaHiresRefinePass,
+            GigaHiresDebugPrint,
             GigaHiresEasy,
             GigaHiresV1,
         ]

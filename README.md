@@ -36,6 +36,7 @@ Primary notes:
 - [docs/reforge-hires-fix-notes.md](docs/reforge-hires-fix-notes.md)
 - [docs/explicit-two-pass-reference.md](docs/explicit-two-pass-reference.md)
 - [docs/helper-nodes-subgraph-plan.md](docs/helper-nodes-subgraph-plan.md)
+- [docs/baseline-and-next-steps.md](docs/baseline-and-next-steps.md)
 - [example_workflows/explicit_two_pass_reference.json](/mnt/d/comfyui/custom_nodes/ComfyUI-GigaHires/example_workflows/explicit_two_pass_reference.json)
 - [example_workflows/helper_nodes_reference.json](/mnt/d/comfyui/custom_nodes/ComfyUI-GigaHires/example_workflows/helper_nodes_reference.json)
 - [reforge repo](/mnt/d/stable-diffusion-webui-reForge)
